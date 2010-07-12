@@ -9,6 +9,7 @@ require 'ostruct'
 require 'digest/md5'
 require 'rexml/document'
 require 'hpricot'
+require 'find'
 
 #コマンドラインオプション
 def checkoption
@@ -26,10 +27,12 @@ def checkoption
     opt.on('-p','--is-private', 'プライベート設定')                 {|v| options.private =v}
     opt.on('--friend', '--friends', '友達参照可')      { |v| options.friend = v }
     opt.on('--family', '家族参照可')                   { |v| options.family = v }
+    opt.on('--delete', 'アップロードに成功したファイルを削除する')                   { |v| options.delete = v }
+    opt.on('--dir=DIR', '指定したディレクトリ配下の画像ファイルをまとめて処理する')                   { |v| options.dir = v }
     #オプションのパース
     opt.parse!(ARGV)
 
-    if(options.file==nil)
+    if(options.file==nil && options.dir==nil)
       puts opt.help
       exit
     end
@@ -110,29 +113,57 @@ end
 #upload api
 #指定した写真をアップロードする
 def upload(ac_f,opts)
+  
   ep = 'http://api.flickr.com/services/upload/'
 
+  filelist = Array.new
+  photoids = Array.new
+
   #指定したファイルが存在するか確認
-  (puts "#{opts.file} はファイルではありません。";exit) if ! test ?r, opts.file
+  if(opts.file)
+    (puts "#{opts.file} はファイルではありません。";exit) if ! test ?r, opts.file
+    filelist << opts.file
+  end
 
-  file = File.new(opts.file)
-  params = Hash.new
-  params["title"] = opts.title if opts.title
-  params["description"] = ops.description if opts.description
-  params["tags"] = opts.tags.join(" ") if opts.tags
-  params["is_public"] = 0 if opts.private
-  params["is_friend"] = 1 if opts.friend
-  params["is_family"] = 1 if opts.family
-  params["api_key"] = ac_f['api_key']
-  params["auth_token"] = ac_f['token']
-  params["api_sig"] = get_api_sig(params,ac_f["secret"])
-  params["photo"] = file
-  agent = Mechanize.new
-  page = agent.post(ep,params)
-  doc = Hpricot(page.body)
-  return doc.at("photoid").inner_text
+  #ディレクトリからファイル一覧を取得する
+  if(opts.dir)
+    Find.find(opts.dir) do |f|
+      if( /(\.jpg$)|(\.jpeg$)|(\.gif$)|(\.bmp$)|(\.png$)/ =~ f)
+        filelist << f
+      end
+    end
+  end
+  
+  
+  filelist.each do |f|
+    file = File.new(f)
+    params = Hash.new
+    params["title"] = opts.title if opts.title
+    params["description"] = ops.description if opts.description
+    params["tags"] = opts.tags.join(" ") if opts.tags
+    params["is_public"] = 0 if opts.private
+    params["is_friend"] = 1 if opts.friend
+    params["is_family"] = 1 if opts.family
+    params["api_key"] = ac_f['api_key']
+    params["auth_token"] = ac_f['token']
+    params["api_sig"] = get_api_sig(params,ac_f["secret"])
+    params["photo"] = file
+    agent = Mechanize.new
+    page = agent.post(ep,params)
+    doc = Hpricot(page.body)
+    if (doc.at(:rsp)[:stat] == 'ok')
+      puts "#{file.path}をFlickrに登録しました。"
+      if(opts.delete)
+        puts "#{file.path}を削除します"
+        file.close
+        File.delete(f)
+      end
+      photoids << doc.at("photoid").inner_text
+    end
+  end
+  return photoids
 end
-
+  
 #自分のユーザIDを取得する
 def getuserid(ac_f)
   ep = 'http://flickr.com/services/rest/'
@@ -184,18 +215,20 @@ def makephotoset(ac_f,opts,photoid)
 end
 
 #フォトセットに写真を追加する。
-def addphotoset(ac_f,opts,photoid,photosetid)
+def addphotoset(ac_f,opts,photoids,photosetid)
   ep = 'http://flickr.com/services/rest/'
-  params = Hash.new
-  params["method"] = "flickr.photosets.addPhoto"
-  params["photoset_id"] = photosetid
-  params["photo_id"] = photoid
-  params["api_key"] = ac_f['api_key']
-  params["auth_token"] = ac_f['token']
-  params["api_sig"] = get_api_sig(params,ac_f["secret"])
-
-  agent = Mechanize.new
-  page = agent.post(ep,params)
+  photoids.each do |id|
+    params = Hash.new
+    params["method"] = "flickr.photosets.addPhoto"
+    params["photoset_id"] = photosetid
+    params["photo_id"] = id
+    params["api_key"] = ac_f['api_key']
+    params["auth_token"] = ac_f['token']
+    params["api_sig"] = get_api_sig(params,ac_f["secret"])
+    
+    agent = Mechanize.new
+    page = agent.post(ep,params)
+  end
 end
 
 
@@ -213,13 +246,13 @@ end
 opts=checkoption
 
 #画像をPostしてフォトIDを取得
-photoid=upload(ac_f,opts)
+photoids=upload(ac_f,opts)
 
 userid=getuserid(ac_f)
 ("ユーザIDが存在取得できなかったため、終了します";exit) if userid == nil
 
 #フォトセット一覧を取得
-p photosetlist = getphotosetlist(ac_f,userid)
+photosetlist = getphotosetlist(ac_f,userid)
 
 #フォトセットの指定があるか？
 if (opts.photoset!=nil)
@@ -227,10 +260,9 @@ if (opts.photoset!=nil)
   #無ければ新規作成して、Postしたファイルをプライマリにする
   if( photosetlist.has_key? opts.photoset)
     photosetid = photosetlist[opts.photoset]
-    addphotoset(ac_f,opts,photoid,photosetid)
-    
+    addphotoset(ac_f,opts,photoids,photosetid)
   else
-    makephotoset(ac_f,opts,photoid)
+    makephotoset(ac_f,opts,photoid[0])
+    addphotoset(ac_f,opts,photoids[1..-1],photosetid)
   end
 end
-
