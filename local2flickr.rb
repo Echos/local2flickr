@@ -3,13 +3,16 @@
 
 require 'rubygems'
 require 'optparse'
-require 'mechanize'
+#require 'mechanize'
+require 'httpclient'
 require 'pit'
 require 'ostruct'
 require 'digest/md5'
-require 'rexml/document'
-require 'hpricot'
+require 'nokogiri'
 require 'find'
+
+
+@agent = nil
 
 #コマンドラインオプション
 def checkoption
@@ -68,9 +71,9 @@ def getfrob(ac_f)
   params["api_key"] = ac_f["api_key"]
   params["api_sig"] = get_api_sig(params,ac_f["secret"])
 
-  agent = Mechanize.new
-  page = agent.post(ep,params)
-  doc = Hpricot(page.body)
+#  agent = HTTPClient.new
+  page = @agent.post_content(ep,params)
+  doc = Nokogiri(page)
   return doc.at("frob").inner_text
 end
 
@@ -99,9 +102,9 @@ def gettoken(ac_f,frob)
   params["api_key"] = ac_f["api_key"]
   params["frob"]    = frob
   params["api_sig"] = get_api_sig(params,ac_f["secret"])
-  agent = Mechanize.new
-  page = agent.post(ep,params)
-  doc = Hpricot(page.body)
+#  agent = HTTPClient.new
+  page = @agent.post_content(ep,params)
+  doc = Nokogiri(page)
   begin
     return doc.at("token").inner_text
   rescue
@@ -148,9 +151,9 @@ def upload(ac_f,opts)
     params["auth_token"] = ac_f['token']
     params["api_sig"] = get_api_sig(params,ac_f["secret"])
     params["photo"] = file
-    agent = Mechanize.new
-    page = agent.post(ep,params)
-    doc = Hpricot(page.body)
+#    agent = HTTPClient.new
+    page = @agent.post_content(ep,params)
+    doc = Nokogiri(page)
     if (doc.at(:rsp)[:stat] == 'ok')
       puts "#{file.path}をFlickrに登録しました。"
       if(opts.delete)
@@ -173,9 +176,9 @@ def getuserid(ac_f)
   params["auth_token"] = ac_f['token']
   params["api_sig"] = get_api_sig(params,ac_f["secret"])
 
-  agent = Mechanize.new
-  page = agent.post(ep,params)
-  doc = Hpricot(page.body)
+#  agent = HTTPClient.new
+  page = @agent.post_content(ep,params)
+  doc = Nokogiri(page)
   return  (doc/:user)[0]['nsid']
 end
 
@@ -189,9 +192,9 @@ def getphotosetlist(ac_f,userid)
   params["auth_token"] = ac_f['token']
   params["api_sig"] = get_api_sig(params,ac_f["secret"])
 
-  agent = Mechanize.new
-  page = agent.post(ep,params)
-  doc = Hpricot(page.body)
+#  agent = HTTPClient.new
+  page = @agent.post_content(ep,params)
+  doc = Nokogiri(page)
   hash = Hash.new
   (doc/:photoset).each do |elem|
     hash[(elem.at(:title)).inner_text]= elem[:id]
@@ -210,8 +213,8 @@ def makephotoset(ac_f,opts,photoid)
   params["auth_token"] = ac_f['token']
   params["api_sig"] = get_api_sig(params,ac_f["secret"])
 
-  agent = Mechanize.new
-  page = agent.post(ep,params)
+#  agent = HTTPClient.new
+  page = @agent.post_content(ep,params)
 end
 
 #フォトセットに写真を追加する。
@@ -226,11 +229,13 @@ def addphotoset(ac_f,opts,photoids,photosetid)
     params["auth_token"] = ac_f['token']
     params["api_sig"] = get_api_sig(params,ac_f["secret"])
     
-    agent = Mechanize.new
-    page = agent.post(ep,params)
+#    agent = HTTPClient.new
+    page = @agent.post_content(ep,params)
   end
 end
 
+
+@agent = HTTPClient.new
 
 ac_f = account_flickr
 if (ac_f["token"]==nil)
@@ -249,7 +254,7 @@ opts=checkoption
 photoids=upload(ac_f,opts)
 
 userid=getuserid(ac_f)
-("ユーザIDが存在取得できなかったため、終了します";exit) if userid == nil
+("ユーザIDが存在取得できなかったため、終了します";exit) if userid == nil # !> unused literal ignored
 
 #フォトセット一覧を取得
 photosetlist = getphotosetlist(ac_f,userid)
