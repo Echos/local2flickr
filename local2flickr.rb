@@ -63,7 +63,7 @@ def get_api_sig(params,secret)
   return Digest::MD5.hexdigest(org_sig)
 end
 
-#frobを取得（トークン見取得時のみ）
+#frobを取得（トークン未取得時のみ）
 def getfrob(ac_f)
   ep = 'http://flickr.com/services/rest/'
   params = Hash.new
@@ -77,7 +77,7 @@ def getfrob(ac_f)
   return doc.at("frob").inner_text
 end
 
-#認証を実行する(トークン見取得時のみ)
+#認証を実行する(トークン未取得時のみ)
 #※ブラウザアクセスがあります
 def auth(ac_f,frob)
   ep = 'http://www.flickr.com/services/auth/'
@@ -131,39 +131,53 @@ def upload(ac_f,opts)
   #ディレクトリからファイル一覧を取得する
   if(opts.dir)
     Find.find(opts.dir) do |f|
-      if( /(\.jpg$)|(\.JPG$)|(\.psd$)|(\.PSG$)|(\.jpeg$)|(\.JPEG$)|(\.gif$)|(\.GIF$)|(\.bmp$)|(\.BPM$)|(\.png$)|(\.PNG$)/ =~ f)
+      if( /(\.psd$)|(\.PSG$)|(\.jpeg$)|(\.JPEG$)|(\.gif$)|(\.GIF$)|(\.bmp$)|(\.BPM$)|(\.png$)|(\.PNG$)/ =~ f)
         filelist << f
       end
     end
   end
-  
-  
-  filelist.each do |f|
-    file = File.new(f)
-    params = Hash.new
-    params["title"] = opts.title if opts.title
-    params["description"] = ops.description if opts.description
-    params["tags"] = opts.tags.join(" ") if opts.tags
-    params["is_public"] = 0 if opts.private
-    params["is_friend"] = 1 if opts.friend
-    params["is_family"] = 1 if opts.family
-    params["api_key"] = ac_f['api_key']
-    params["auth_token"] = ac_f['token']
-    params["api_sig"] = get_api_sig(params,ac_f["secret"])
-    params["photo"] = file
-#    agent = HTTPClient.new
-    page = @agent.post_content(ep,params)
-    doc = Nokogiri(page)
-    if (doc.at(:rsp)[:stat] == 'ok')
-      puts "#{file.path}をFlickrに登録しました。"
-      if(opts.delete)
-        puts "#{file.path}を削除します"
-        file.close
-        File.delete(f)
+  begin
+    count = 0
+    filelist.each do |f|
+      count += 1
+      file = File.new(f)
+      params = Hash.new
+      params["title"] = opts.title if opts.title
+      params["description"] = ops.description if opts.description
+      params["tags"] = opts.tags.join(" ") if opts.tags
+      
+      #ファイルぱパスからタグを生成
+      path_info = f.split("/")[0..-2]
+      params["tags"] = params["tags"] + " " +path_info.join(" ").gsub(".","")
+      puts ("タグは#{params['tags']}です")
+      
+      params["is_public"] = 0 if opts.private
+      params["is_friend"] = 1 if opts.friend
+      params["is_family"] = 1 if opts.family
+      params["api_key"] = ac_f['api_key']
+      params["auth_token"] = ac_f['token']
+      params["api_sig"] = get_api_sig(params,ac_f["secret"])
+      params["photo"] = file
+      #    agent = HTTPClient.new
+      puts ("#{f}をポストします(#{count}/#{filelist.length})")
+      page = @agent.post_content(ep,params)
+      puts ("#{f}をポスト完了")
+      doc = Nokogiri(page)
+      #puts page
+      #puts doc.at(:rsp)[:stat]
+      if (doc.at(:rsp)[:stat] == 'ok')
+        if(opts.delete)
+          puts "#{file.path}を削除します"
+          file.close
+          File.delete(f)
+        end
+        puts "#{file.path}をPhotoID:#{doc.at("photoid").inner_text}で登録しました。"
+        photoids << doc.at("photoid").inner_text
       end
-      photoids << doc.at("photoid").inner_text
     end
-  end
+rescue
+    retry
+end
   return photoids
 end
   
@@ -204,6 +218,7 @@ end
 
 #フォトセットを作成する。
 def makephotoset(ac_f,opts,photoid)
+  puts "フォトセットを新規作成します。[PhotoID:#{photoid},PhotoSetName:#{opts.photoset}]"
   ep = 'http://flickr.com/services/rest/'
   params = Hash.new
   params["method"] = "flickr.photosets.create"
@@ -215,11 +230,24 @@ def makephotoset(ac_f,opts,photoid)
 
 #  agent = HTTPClient.new
   page = @agent.post_content(ep,params)
+  # photoSetID
+  doc = Nokogiri(page)
+  #puts doc.at(:rsp)[:stat]
+  if (doc.at(:rsp)[:stat] == 'ok')
+    photosetid = doc.at(:photoset)[:id]
+    puts "フォトセットを新規作成しました。[PhotoSetID:#{photosetid}]"
+    return photosetid
+  else
+    puts "フォトセットの作成に失敗しました。終了します。"
+    exit 1
+  end
 end
 
 #フォトセットに写真を追加する。
 def addphotoset(ac_f,opts,photoids,photosetid)
   ep = 'http://flickr.com/services/rest/'
+  puts "フォトセット登録中:PhotoSetID:#{photosetid}"
+  puts "フォトセット登録中:PhotoIDs:#{photoids.join(',')}"
   photoids.each do |id|
     params = Hash.new
     params["method"] = "flickr.photosets.addPhoto"
@@ -259,15 +287,26 @@ userid=getuserid(ac_f)
 #フォトセット一覧を取得
 photosetlist = getphotosetlist(ac_f,userid)
 
+puts "######################################################"
+puts "再実行用情報1:フォトセットリスト：#{photoids.join(',')}"
+puts "再実行用情報2:フォトセット名称  ：#{opts.photoset}"
+puts "######################################################"
+
 #フォトセットの指定があるか？
+begin
 if (opts.photoset!=nil)
   #フォトセットがすでに有る場合、IDを利用し登録。
   #無ければ新規作成して、Postしたファイルをプライマリにする
   if( photosetlist.has_key? opts.photoset)
+    puts "既存のフォトセットに登録します。"
     photosetid = photosetlist[opts.photoset]
     addphotoset(ac_f,opts,photoids,photosetid)
   else
-    makephotoset(ac_f,opts,photoid[0])
+    puts "新規のフォトセットに登録します。"
+    photosetid = makephotoset(ac_f,opts,photoids[0])
     addphotoset(ac_f,opts,photoids[1..-1],photosetid)
   end
+end
+rescue => error
+puts error
 end
