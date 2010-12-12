@@ -131,7 +131,7 @@ def upload(ac_f,opts)
   #ディレクトリからファイル一覧を取得する
   if(opts.dir)
     Find.find(opts.dir) do |f|
-      if( /(\.psd$)|(\.PSG$)|(\.jpeg$)|(\.JPEG$)|(\.gif$)|(\.GIF$)|(\.bmp$)|(\.BPM$)|(\.png$)|(\.PNG$)/ =~ f)
+      if( /(\.psd$)|(\.PSG$)|(\.jpeg$)|(\.JPEG$)|(\.jpg$)|(\.JPG$)|(\.gif$)|(\.GIF$)|(\.bmp$)|(\.BPM$)|(\.png$)|(\.PNG$)/ =~ f)
         filelist << f
       end
     end
