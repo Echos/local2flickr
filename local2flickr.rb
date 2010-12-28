@@ -10,9 +10,12 @@ require 'ostruct'
 require 'digest/md5'
 require 'nokogiri'
 require 'find'
-
+require 'logger'
 
 @agent = nil
+
+@l = Logger.new(STDOUT)
+@l.level = Logger::DEBUG
 
 #コマンドラインオプション
 def checkoption
@@ -127,12 +130,13 @@ def upload(ac_f,opts)
     (puts "#{opts.file} はファイルではありません。";exit) if ! test ?r, opts.file
     filelist << opts.file
   end
-
+ 
   #ディレクトリからファイル一覧を取得する
   if(opts.dir)
     Find.find(opts.dir) do |f|
       if( /(\.psd$)|(\.PSG$)|(\.jpeg$)|(\.JPEG$)|(\.jpg$)|(\.JPG$)|(\.gif$)|(\.GIF$)|(\.bmp$)|(\.BPM$)|(\.png$)|(\.PNG$)/ =~ f)
         filelist << f
+        @l.debug "#{f}を追加"
       end
     end
   end
@@ -145,6 +149,7 @@ def upload(ac_f,opts)
       params["title"] = opts.title if opts.title
       params["description"] = ops.description if opts.description
       params["tags"] = opts.tags.join(" ") if opts.tags
+      params["tags"] = "" if !(opts.tags)
       
       #ファイルぱパスからタグを生成
       path_info = f.split("/")[0..-2]
@@ -175,7 +180,8 @@ def upload(ac_f,opts)
         photoids << doc.at("photoid").inner_text
       end
     end
-rescue
+rescue => err
+    @l.error err
     retry
 end
   return photoids
@@ -262,7 +268,7 @@ def addphotoset(ac_f,opts,photoids,photosetid)
   end
 end
 
-
+@l.info 'HTTPクライアントの作成'
 @agent = HTTPClient.new
 
 ac_f = account_flickr
@@ -276,9 +282,11 @@ if (ac_f["token"]==nil)
   Pit.set("flickr",:data => ac_f)
 end
 
+@l.info "オプションチェック"
 opts=checkoption
 
 #画像をPostしてフォトIDを取得
+@l.info 'ポスト開始'
 photoids=upload(ac_f,opts)
 
 userid=getuserid(ac_f)
