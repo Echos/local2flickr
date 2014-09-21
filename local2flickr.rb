@@ -22,7 +22,7 @@ def checkoption
   opt = OptionParser.new
   #オプション情報保持用
   options = OpenStruct.new
-  begin 
+  begin
     #コマンドラインオプション定義
     opt.on('-h','--help','USAGEを表示。')   {|v| puts opt.help;exit }
     opt.on('-f FILE', '--file=FILE' ,'アップロードするファイル')    {|v| options.file = v }
@@ -68,7 +68,7 @@ end
 
 #frobを取得（トークン未取得時のみ）
 def getfrob(ac_f)
-  ep = 'http://flickr.com/services/rest/'
+  ep = 'https://api.flickr.com/services/rest/'
   params = Hash.new
   params["method"] = "flickr.auth.getFrob"
   params["api_key"] = ac_f["api_key"]
@@ -83,13 +83,13 @@ end
 #認証を実行する(トークン未取得時のみ)
 #※ブラウザアクセスがあります
 def auth(ac_f,frob)
-  ep = 'http://www.flickr.com/services/auth/'
+  ep = 'https://www.flickr.com/services/auth/'
   params = Hash.new
   params["api_key"] = ac_f["api_key"]
   params["perms"]   = "delete"
   params["frob"]    = frob
   params["api_sig"] = get_api_sig(params,ac_f["secret"])
-  
+
   puts "#{ep}?api_key=#{params['api_key']}&perms=#{params['perms']}&frob=#{params['frob']}&api_sig=#{params['api_sig']} にアクセスして、認証してください。"
   puts "ブラウザが自動で起動します。"
   puts "認証を完了したらエンターを押してください。続けてトークン情報の取得を実施します。"
@@ -119,8 +119,8 @@ end
 #upload api
 #指定した写真をアップロードする
 def upload(ac_f,opts)
-  
-  ep = 'http://api.flickr.com/services/upload/'
+
+  ep = 'https://up.flickr.com/services/upload/'
 
   filelist = Array.new
   photoids = Array.new
@@ -130,11 +130,12 @@ def upload(ac_f,opts)
     (puts "#{opts.file} はファイルではありません。";exit) if ! test ?r, opts.file
     filelist << opts.file
   end
- 
+
   #ディレクトリからファイル一覧を取得する
   if(opts.dir)
     Find.find(opts.dir) do |f|
-      if( /(\.psd$)|(\.PSG$)|(\.jpeg$)|(\.JPEG$)|(\.jpg$)|(\.JPG$)|(\.gif$)|(\.GIF$)|(\.bmp$)|(\.BPM$)|(\.png$)|(\.PNG$)/ =~ f)
+      if( /(\.mpg$)|(\.MPG$)|(\.psd$)|(\.PSG$)|(\.3gp$)|(\.3g2$)|(\.3G2$)|(\.3GP$)|(\.avi$)|(\.AVI$)|(\.mp4$)|(\.MP4$)|(\.mov$)|(\.MOV$)|(\.jpeg$)|(\.JPEG$)|(\.jpg$)|(\.JPG$)|(\.gif$)|(\.GIF$)|(\.bmp$)|(\.BPM$)|(\.png$)|(\.PNG$)/ =~ f)
+      #if( /(\.mpg$)|(\.MPG$)|(\.psd$)|(\.PSG$)|(\.3gp$)|(\.3g2$)|(\.3G2$)|(\.3GP$)|(\.avi$)|(\.AVI$)|(\.mp4$)|(\.MP4$)|(\.jpeg$)|(\.JPEG$)|(\.jpg$)|(\.JPG$)|(\.gif$)|(\.GIF$)|(\.bmp$)|(\.BPM$)|(\.png$)|(\.PNG$)/ =~ f)
         filelist << f
         @l.debug "#{f}を追加"
       end
@@ -150,12 +151,12 @@ def upload(ac_f,opts)
       params["description"] = ops.description if opts.description
       params["tags"] = opts.tags.join(" ") if opts.tags
       params["tags"] = "" if !(opts.tags)
-      
+
       #ファイルぱパスからタグを生成
       path_info = f.split("/")[0..-2]
       params["tags"] = params["tags"] + " " +path_info.join(" ").gsub(".","")
       puts ("タグは#{params['tags']}です")
-      
+
       params["is_public"] = 0 if opts.private
       params["is_friend"] = 1 if opts.friend
       params["is_family"] = 1 if opts.family
@@ -182,14 +183,13 @@ def upload(ac_f,opts)
     end
 rescue => err
     @l.error err
-    retry
 end
   return photoids
 end
-  
+
 #自分のユーザIDを取得する
 def getuserid(ac_f)
-  ep = 'http://flickr.com/services/rest/'
+  ep = 'https://api.flickr.com/services/rest/'
   params = Hash.new
   params["method"] = "flickr.auth.checkToken"
   params["api_key"] = ac_f['api_key']
@@ -204,7 +204,7 @@ end
 
 #フォトセットリストを取得する。
 def getphotosetlist(ac_f,userid)
-  ep = 'http://flickr.com/services/rest/'
+  ep = 'https://api.flickr.com/services/rest/'
   params = Hash.new
   params["method"] = "flickr.photosets.getList"
   params["api_key"] = ac_f['api_key']
@@ -225,7 +225,7 @@ end
 #フォトセットを作成する。
 def makephotoset(ac_f,opts,photoid)
   puts "フォトセットを新規作成します。[PhotoID:#{photoid},PhotoSetName:#{opts.photoset}]"
-  ep = 'http://flickr.com/services/rest/'
+  ep = 'https://api.flickr.com/services/rest/'
   params = Hash.new
   params["method"] = "flickr.photosets.create"
   params["title"] = opts.photoset
@@ -251,7 +251,7 @@ end
 
 #フォトセットに写真を追加する。
 def addphotoset(ac_f,opts,photoids,photosetid)
-  ep = 'http://flickr.com/services/rest/'
+  ep = 'https://api.flickr.com/services/rest/'
   puts "フォトセット登録中:PhotoSetID:#{photosetid}"
   puts "フォトセット登録中:PhotoIDs:#{photoids.join(',')}"
   photoids.each do |id|
@@ -262,7 +262,7 @@ def addphotoset(ac_f,opts,photoids,photosetid)
     params["api_key"] = ac_f['api_key']
     params["auth_token"] = ac_f['token']
     params["api_sig"] = get_api_sig(params,ac_f["secret"])
-    
+
 #    agent = HTTPClient.new
     page = @agent.post_content(ep,params)
   end
@@ -270,6 +270,8 @@ end
 
 @l.info 'HTTPクライアントの作成'
 @agent = HTTPClient.new
+@agent.send_timeout = 12000
+@agent.receive_timeout = 12000
 
 ac_f = account_flickr
 if (ac_f["token"]==nil)
